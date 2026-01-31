@@ -1,58 +1,62 @@
-use colored::*;
-use std::sync::atomic::{AtomicBool, Ordering};
+//! Utility module for uwu.
+//!
+//! Provides global settings and message printing utilities.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use crate::color;
+
+// ============================================================================
+// Global Settings
+// ============================================================================
+
+/// Global quiet mode flag
 static QUIET_MODE: AtomicBool = AtomicBool::new(false);
 
-// パステルカラー定義
-pub fn pink(text: &str) -> ColoredString {
-    text.truecolor(255, 182, 193)
-}
-
-pub fn cyan(text: &str) -> ColoredString {
-    text.truecolor(173, 216, 230)
-}
-
-pub fn mint(text: &str) -> ColoredString {
-    text.truecolor(189, 252, 201)
-}
-
-pub fn lavender(text: &str) -> ColoredString {
-    text.truecolor(230, 230, 250)
-}
-
-// 静かモードの設定
+/// Set the global quiet mode
 pub fn set_quiet_mode(quiet: bool) {
     QUIET_MODE.store(quiet, Ordering::Relaxed);
 }
 
+/// Check if quiet mode is enabled
 pub fn is_quiet() -> bool {
     QUIET_MODE.load(Ordering::Relaxed)
 }
 
-// メッセージ出力ヘルパー
+// ============================================================================
+// Message Output Functions
+// ============================================================================
+
+/// Print a success message with appropriate formatting
 pub fn print_success(message: &str) {
     if !is_quiet() {
-        println!("  {} {}", mint("+"), message);
+        println!("  {} {}", color::success_symbol(), message);
     }
 }
 
+/// Print an error message (always shown, even in quiet mode)
 pub fn print_error(message: &str) {
-    eprintln!("  {} {}", pink("x"), message);
+    eprintln!("  {} {}", color::error_symbol(), message);
 }
 
+/// Print a warning message
 pub fn print_warn(message: &str) {
     if !is_quiet() {
-        println!("  {} {}", lavender("!"), message);
+        println!("  {} {}", color::warn_symbol(), message);
     }
 }
 
+/// Print an info message
 pub fn print_info(message: &str) {
     if !is_quiet() {
-        println!("  {}", cyan(message));
+        println!("  {}", color::info(message));
     }
 }
 
-// Windows管理者権限チェック
+// ============================================================================
+// Platform-specific Utilities
+// ============================================================================
+
+/// Check if the current process has administrator/elevated privileges
 #[cfg(windows)]
 pub fn is_elevated() -> bool {
     use windows::Win32::Security::*;
@@ -77,6 +81,7 @@ pub fn is_elevated() -> bool {
     }
 }
 
+/// Check if the current process has administrator/elevated privileges (non-Windows)
 #[cfg(not(windows))]
 pub fn is_elevated() -> bool {
     false
