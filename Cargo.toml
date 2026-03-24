@@ -1,6 +1,6 @@
 [package]
 name = "uwu"
-version = "0.1.1"
+version = "0.2"
 edition = "2021"
 authors = ["rxxuzi"]
 description = "UWU - Windows Utilities"
@@ -37,6 +37,9 @@ windows = { version = "0.52", features = [
     "implement",
 ] }
 libloading = "0.8"
+[dev-dependencies]
+tempfile = "3.10"
+
 [profile.release]
 opt-level = 3
 lto = true

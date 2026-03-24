@@ -5,16 +5,12 @@
 
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use winreg::enums::*;
 use winreg::RegKey;
 
 use crate::{color, utils};
-
-// ============================================================================
-// Path Normalization
-// ============================================================================
 
 /// Normalizes a Windows path by removing UNC prefixes and standardizing separators.
 fn normalize_windows_path(path: &str) -> String {
@@ -38,10 +34,6 @@ fn normalize_windows_path(path: &str) -> String {
 fn normalize_for_comparison(path: &str) -> String {
     normalize_windows_path(path).to_lowercase()
 }
-
-// ============================================================================
-// Public API
-// ============================================================================
 
 /// Adds a directory to the PATH environment variable.
 pub fn add(path_str: &str, system: bool, force: bool) -> Result<()> {
@@ -71,7 +63,8 @@ pub fn add(path_str: &str, system: bool, force: bool) -> Result<()> {
 
     // Load current PATH
     let current_path = get_path_variable(system)?;
-    let paths: Vec<String> = current_path.split(';')
+    let paths: Vec<String> = current_path
+        .split(';')
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect();
@@ -79,7 +72,10 @@ pub fn add(path_str: &str, system: bool, force: bool) -> Result<()> {
     let abs_path_str = normalize_windows_path(&absolute_path.to_string_lossy());
 
     // Check for duplicates
-    if paths.iter().any(|p| normalize_for_comparison(p) == normalize_for_comparison(&abs_path_str)) {
+    if paths
+        .iter()
+        .any(|p| normalize_for_comparison(p) == normalize_for_comparison(&abs_path_str))
+    {
         utils::print_info(&format!("Already in PATH: {}", abs_path_str));
         return Ok(());
     }
@@ -101,7 +97,10 @@ pub fn add(path_str: &str, system: bool, force: bool) -> Result<()> {
 
     if !utils::is_quiet() {
         println!();
-        println!("  {}", color::note("Note: Restart your terminal for changes to take effect."));
+        println!(
+            "  {}",
+            color::note("Note: Restart your terminal for changes to take effect.")
+        );
     }
 
     Ok(())
@@ -110,7 +109,8 @@ pub fn add(path_str: &str, system: bool, force: bool) -> Result<()> {
 /// Removes a directory from the PATH environment variable.
 pub fn remove(path_str: &str, system: bool, force: bool) -> Result<()> {
     let current_path = get_path_variable(system)?;
-    let paths: Vec<String> = current_path.split(';')
+    let paths: Vec<String> = current_path
+        .split(';')
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect();
@@ -118,7 +118,11 @@ pub fn remove(path_str: &str, system: bool, force: bool) -> Result<()> {
     // Try parsing as index first
     if let Ok(index) = path_str.parse::<usize>() {
         if index == 0 || index > paths.len() {
-            utils::print_warn(&format!("Invalid index: {} (valid range: 1-{})", index, paths.len()));
+            utils::print_warn(&format!(
+                "Invalid index: {} (valid range: 1-{})",
+                index,
+                paths.len()
+            ));
             return Ok(());
         }
 
@@ -174,7 +178,10 @@ pub fn remove(path_str: &str, system: bool, force: bool) -> Result<()> {
     if found_indices.is_empty() {
         utils::print_warn(&format!("Not found in PATH: {}", search_path));
         if !absolute_path.exists() {
-            println!("  Note: Path does not exist on disk: {}", absolute_path.display());
+            println!(
+                "  Note: Path does not exist on disk: {}",
+                absolute_path.display()
+            );
         }
         println!("  Tip: Use 'uwu path list' to see all PATH entries with their index numbers.");
         return Ok(());
@@ -206,7 +213,8 @@ pub fn remove(path_str: &str, system: bool, force: bool) -> Result<()> {
         }
     }
 
-    let filtered: Vec<String> = paths.into_iter()
+    let filtered: Vec<String> = paths
+        .into_iter()
         .enumerate()
         .filter(|(i, _)| *i != idx)
         .map(|(_, p)| p)
@@ -253,7 +261,8 @@ pub fn list(system: bool) -> Result<()> {
 /// Removes duplicate and invalid PATH entries.
 pub fn clean(system: bool, force: bool) -> Result<()> {
     let current_path = get_path_variable(system)?;
-    let paths: Vec<String> = current_path.split(';')
+    let paths: Vec<String> = current_path
+        .split(';')
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect();
@@ -322,21 +331,15 @@ pub fn clean(system: bool, force: bool) -> Result<()> {
     Ok(())
 }
 
-// ============================================================================
-// Registry Operations
-// ============================================================================
-
 fn get_path_variable(system: bool) -> Result<String> {
     let reg_key = if system {
         RegKey::predef(HKEY_LOCAL_MACHINE)
             .open_subkey(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")?
     } else {
-        RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey("Environment")?
+        RegKey::predef(HKEY_CURRENT_USER).open_subkey("Environment")?
     };
 
-    let path: String = reg_key.get_value("Path")
-        .unwrap_or_else(|_| String::new());
+    let path: String = reg_key.get_value("Path").unwrap_or_else(|_| String::new());
 
     Ok(path)
 }
@@ -346,8 +349,9 @@ fn set_path_variable(system: bool, new_path: &str) -> Result<()> {
         RegKey::predef(HKEY_LOCAL_MACHINE)
             .open_subkey_with_flags(
                 r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-                KEY_READ | KEY_WRITE
-            ).context("Failed to open system registry. Run as administrator.")?
+                KEY_READ | KEY_WRITE,
+            )
+            .context("Failed to open system registry. Run as administrator.")?
     } else {
         RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?
@@ -360,8 +364,8 @@ fn set_path_variable(system: bool, new_path: &str) -> Result<()> {
 fn broadcast_environment_change() {
     #[cfg(windows)]
     {
-        use windows::Win32::UI::WindowsAndMessaging::*;
         use windows::Win32::Foundation::*;
+        use windows::Win32::UI::WindowsAndMessaging::*;
 
         unsafe {
             let env_str: Vec<u16> = "Environment\0".encode_utf16().collect();
@@ -386,9 +390,7 @@ fn broadcast_environment_change() {
 }
 
 fn print_path_entries(path_str: &str, indent: &str) {
-    let paths: Vec<&str> = path_str.split(';')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let paths: Vec<&str> = path_str.split(';').filter(|s| !s.is_empty()).collect();
 
     if paths.is_empty() {
         println!("{}{}", indent, color::note("(empty)"));
@@ -402,11 +404,12 @@ fn print_path_entries(path_str: &str, indent: &str) {
         if exists {
             println!("{}{:<4} {}", indent, num, path);
         } else {
-            println!("{}{:<4} {} {}",
-                     indent,
-                     num,
-                     path,
-                     color::error("(not found)")
+            println!(
+                "{}{:<4} {} {}",
+                indent,
+                num,
+                path,
+                color::error("(not found)")
             );
         }
     }

@@ -2,16 +2,12 @@
 //!
 //! Provides functionality to add, remove, and list Windows Defender exclusions.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::io::{self, Write};
 
 use crate::{color, utils};
-
-// ============================================================================
-// Public API
-// ============================================================================
 
 /// Adds a path or process to Windows Defender exclusions.
 ///
@@ -94,7 +90,10 @@ pub fn list() -> Result<()> {
     let exclusion_types = vec![
         ("Path exclusions", "(Get-MpPreference).ExclusionPath"),
         ("Process exclusions", "(Get-MpPreference).ExclusionProcess"),
-        ("Extension exclusions", "(Get-MpPreference).ExclusionExtension"),
+        (
+            "Extension exclusions",
+            "(Get-MpPreference).ExclusionExtension",
+        ),
     ];
 
     let mut has_exclusions = false;
@@ -113,16 +112,15 @@ pub fn list() -> Result<()> {
     }
 
     if !utils::is_elevated() {
-        println!("\n  {}", color::note("Note: Some details may require administrator privileges."));
+        println!(
+            "\n  {}",
+            color::note("Note: Some details may require administrator privileges.")
+        );
     }
 
     println!();
     Ok(())
 }
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
 
 /// Resolves a path string to an absolute PathBuf.
 fn resolve_exclusion_path(path_str: &str, is_process: bool) -> Result<PathBuf> {
@@ -161,12 +159,7 @@ fn build_remove_command(path: &str, is_process: bool) -> String {
 /// Executes a PowerShell command for Windows Defender.
 fn execute_defender_command(command: String) -> Result<()> {
     let output = Command::new("powershell")
-        .args(&[
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &command
-        ])
+        .args(&["-NoProfile", "-NonInteractive", "-Command", &command])
         .output()
         .context("Failed to execute PowerShell")?;
 
@@ -181,12 +174,7 @@ fn execute_defender_command(command: String) -> Result<()> {
 /// Gets exclusion items from Windows Defender.
 fn get_exclusion_items(command: &str) -> Result<Vec<String>> {
     let output = Command::new("powershell")
-        .args(&[
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            command
-        ])
+        .args(&["-NoProfile", "-NonInteractive", "-Command", command])
         .output()
         .context("Failed to execute PowerShell")?;
 
@@ -280,9 +268,9 @@ fn run_elevated(action: &str, path: &str, process: bool) -> Result<()> {
     // Windows-specific elevation using ShellExecute
     #[cfg(windows)]
     {
+        use windows::core::*;
         use windows::Win32::UI::Shell::*;
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        use windows::core::*;
 
         let exe_path_str = exe_path.to_string_lossy();
         let args_str = args.join(" ");
@@ -293,10 +281,7 @@ fn run_elevated(action: &str, path: &str, process: bool) -> Result<()> {
                 .chain(std::iter::once(0))
                 .collect();
 
-            let args_utf16: Vec<u16> = args_str
-                .encode_utf16()
-                .chain(std::iter::once(0))
-                .collect();
+            let args_utf16: Vec<u16> = args_str.encode_utf16().chain(std::iter::once(0)).collect();
 
             let result = ShellExecuteW(
                 None,
@@ -304,7 +289,7 @@ fn run_elevated(action: &str, path: &str, process: bool) -> Result<()> {
                 PCWSTR::from_raw(exe_path_utf16.as_ptr()),
                 PCWSTR::from_raw(args_utf16.as_ptr()),
                 None,
-                SW_SHOWNORMAL
+                SW_SHOWNORMAL,
             );
 
             if result.0 <= 32 {

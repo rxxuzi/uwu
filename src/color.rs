@@ -33,10 +33,6 @@ impl RGB {
     }
 }
 
-// ============================================================================
-// Initialize color support
-// ============================================================================
-
 /// Initialize color support for the current platform
 pub fn init_colors() {
     // Windows環境での初期化
@@ -62,10 +58,6 @@ fn enable_virtual_terminal_processing() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-// ============================================================================
-// Color Palette Definition
-// ============================================================================
-
 /// Pastel pink - used for errors and warnings
 static PINK: Lazy<RGB> = Lazy::new(|| RGB::new(255, 182, 193));
 
@@ -84,9 +76,7 @@ static YELLOW: Lazy<RGB> = Lazy::new(|| RGB::new(255, 253, 184));
 /// Pastel peach - used for special accents
 static PEACH: Lazy<RGB> = Lazy::new(|| RGB::new(255, 208, 175));
 
-// ============================================================================
 // Public API - Colored String Wrapper
-// ============================================================================
 
 /// A wrapper for colored text that can be displayed
 pub struct ColoredText {
@@ -119,12 +109,9 @@ impl std::fmt::Display for ColoredText {
     }
 }
 
-// For compatibility with existing code that expects ColoredString
 pub type ColoredString = ColoredText;
 
-// ============================================================================
 // Public API - Semantic Color Functions
-// ============================================================================
 
 /// Error or invalid state indicator
 pub fn error(text: &str) -> ColoredString {
@@ -166,9 +153,7 @@ pub fn accent(text: &str) -> ColoredString {
     ColoredText::new(text, &PEACH)
 }
 
-// ============================================================================
 // Direct print functions (more reliable for immediate output)
-// ============================================================================
 
 /// Print colored text directly to stdout
 pub fn print_colored(text: &str, rgb: &RGB) -> io::Result<()> {
@@ -195,10 +180,6 @@ pub fn print_info(text: &str) -> io::Result<()> {
     print_colored(text, &CYAN)
 }
 
-// ============================================================================
-// Status Symbols with Colors
-// ============================================================================
-
 /// Success symbol with color
 pub fn success_symbol() -> ColoredString {
     success("✓")
@@ -218,10 +199,6 @@ pub fn warn_symbol() -> ColoredString {
 pub fn info_symbol() -> ColoredString {
     info("ℹ")
 }
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
 
 /// Format a path that doesn't exist
 pub fn missing_path(path: &str) -> String {
@@ -243,9 +220,7 @@ pub fn removed(text: &str) -> String {
     format!("{} {}", error("-"), text)
 }
 
-// ============================================================================
 // Alternative implementation using crossterm's stylize trait
-// ============================================================================
 
 /// Apply RGB color using crossterm's stylize trait
 pub fn apply_rgb(text: &str, r: u8, g: u8, b: u8) -> String {
@@ -272,10 +247,6 @@ pub mod styled {
         apply_rgb(text, LAVENDER.r, LAVENDER.g, LAVENDER.b)
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

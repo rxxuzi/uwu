@@ -60,3 +60,5 @@ yarn-error.log*
 # Local configuration
 config/local.toml
 archive/
+.claude/
+doc

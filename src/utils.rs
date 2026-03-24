@@ -2,12 +2,8 @@
 //!
 //! Provides global settings and message printing utilities.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use crate::color;
-
-// ============================================================================
-// Global Settings
-// ============================================================================
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Global quiet mode flag
 static QUIET_MODE: AtomicBool = AtomicBool::new(false);
@@ -21,10 +17,6 @@ pub fn set_quiet_mode(quiet: bool) {
 pub fn is_quiet() -> bool {
     QUIET_MODE.load(Ordering::Relaxed)
 }
-
-// ============================================================================
-// Message Output Functions
-// ============================================================================
 
 /// Print a success message with appropriate formatting
 pub fn print_success(message: &str) {
@@ -52,15 +44,13 @@ pub fn print_info(message: &str) {
     }
 }
 
-// ============================================================================
 // Platform-specific Utilities
-// ============================================================================
 
 /// Check if the current process has administrator/elevated privileges
 #[cfg(windows)]
 pub fn is_elevated() -> bool {
-    use windows::Win32::Security::*;
     use windows::Win32::Foundation::*;
+    use windows::Win32::Security::*;
 
     unsafe {
         let mut elevation = TOKEN_ELEVATION::default();
@@ -73,7 +63,9 @@ pub fn is_elevated() -> bool {
             Some(&mut elevation as *mut _ as *mut _),
             std::mem::size_of::<TOKEN_ELEVATION>() as u32,
             &mut bytes_needed,
-        ).is_ok() {
+        )
+        .is_ok()
+        {
             elevation.TokenIsElevated != 0
         } else {
             false

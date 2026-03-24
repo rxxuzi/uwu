@@ -7,10 +7,6 @@ use std::process::Command;
 
 use crate::{color, utils};
 
-// ============================================================================
-// Public API
-// ============================================================================
-
 /// Opens a URL or performs a web search in the default browser.
 pub fn open(query: &str, provider: Option<&str>) -> Result<()> {
     // Show help if no query provided
@@ -28,10 +24,6 @@ pub fn open(query: &str, provider: Option<&str>) -> Result<()> {
     utils::print_success("opened browser ~");
     Ok(())
 }
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
 
 /// Shows help information with colored output
 fn show_help() {
@@ -107,33 +99,29 @@ fn build_search_url(query: &str, provider: Option<&str>) -> Result<String> {
     let encoded = urlencoding::encode(query);
 
     let url = match provider {
-        Some("bing") =>
-            format!("https://www.bing.com/search?q={}", encoded),
-        Some("ddg") | Some("duckduckgo") =>
-            format!("https://duckduckgo.com/?q={}", encoded),
-        Some("youtube") | Some("yt") =>
-            format!("https://www.youtube.com/results?search_query={}", encoded),
-        Some("github") | Some("gh") =>
-            format!("https://github.com/search?q={}", encoded),
-        Some("stackoverflow") | Some("so") =>
-            format!("https://stackoverflow.com/search?q={}", encoded),
-        Some("amazon") =>
-            format!("https://www.amazon.com/s?k={}", encoded),
-        Some("twitter") | Some("x") =>
-            format!("https://twitter.com/search?q={}", encoded),
-        Some("reddit") =>
-            format!("https://www.reddit.com/search/?q={}", encoded),
+        Some("bing") => format!("https://www.bing.com/search?q={}", encoded),
+        Some("ddg") | Some("duckduckgo") => format!("https://duckduckgo.com/?q={}", encoded),
+        Some("youtube") | Some("yt") => {
+            format!("https://www.youtube.com/results?search_query={}", encoded)
+        }
+        Some("github") | Some("gh") => format!("https://github.com/search?q={}", encoded),
+        Some("stackoverflow") | Some("so") => {
+            format!("https://stackoverflow.com/search?q={}", encoded)
+        }
+        Some("amazon") => format!("https://www.amazon.com/s?k={}", encoded),
+        Some("twitter") | Some("x") => format!("https://twitter.com/search?q={}", encoded),
+        Some("reddit") => format!("https://www.reddit.com/search/?q={}", encoded),
         Some(unknown) => {
             println!();
-            println!("  {} unknown provider: {}",
-                     color::warn("!"),
-                     color::warn(unknown)
+            println!(
+                "  {} unknown provider: {}",
+                color::warn("!"),
+                color::warn(unknown)
             );
             println!("  using google instead...");
             format!("https://www.google.com/search?q={}", encoded)
-        },
-        None =>
-            format!("https://www.google.com/search?q={}", encoded),
+        }
+        None => format!("https://www.google.com/search?q={}", encoded),
     };
 
     Ok(url)

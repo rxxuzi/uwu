@@ -6,21 +6,18 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod color;
+mod del;
 mod path;
 mod utils;
 mod wdex;
 mod web;
 
-// ============================================================================
-// CLI Structure
-// ============================================================================
-
 #[derive(Parser)]
 #[command(
-name = "uwu",
-version,
-about = "uwu ~ windows utilities",
-long_about = "a minimal and cute windows utility toolkit written in rust ~"
+    name = "uwu",
+    version,
+    about = "uwu ~ windows utilities",
+    long_about = "a minimal and cute windows utility toolkit written in rust ~"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -53,6 +50,24 @@ enum Command {
         /// Use specific search provider
         #[arg(short = 'p', long)]
         provider: Option<String>,
+    },
+
+    /// Delete files/directories recursively (safe rm -rf)
+    Del {
+        /// Path to delete
+        path: String,
+
+        /// Force delete without confirmation
+        #[arg(short, long)]
+        force: bool,
+
+        /// Dry run - show what would be deleted
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+
+        /// Verbose - show each file being deleted
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -131,10 +146,6 @@ enum WdexAction {
     List,
 }
 
-// ============================================================================
-// Main Entry Point
-// ============================================================================
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -151,6 +162,12 @@ fn main() -> Result<()> {
         Command::Path { action } => handle_path_command(action),
         Command::Wdex { action } => handle_wdex_command(action),
         Command::Web { query, provider } => handle_web_command(query, provider),
+        Command::Del {
+            path,
+            force,
+            dry_run,
+            verbose,
+        } => handle_del_command(path, force, dry_run, verbose),
     };
 
     // Show a cute footer if successful and not quiet
@@ -160,10 +177,6 @@ fn main() -> Result<()> {
 
     result
 }
-
-// ============================================================================
-// Environment Configuration
-// ============================================================================
 
 /// Configure the application environment based on CLI flags
 fn configure_environment(cli: &Cli) {
@@ -176,9 +189,10 @@ fn configure_environment(cli: &Cli) {
 /// Show a cute banner
 fn show_banner() {
     println!();
-    println!("  {} ~ {}",
-             color::accent("uwu"),
-             color::info("windows utilities")
+    println!(
+        "  {} ~ {}",
+        color::accent("uwu"),
+        color::info("windows utilities")
     );
 }
 
@@ -189,19 +203,23 @@ fn show_footer() {
     println!();
 }
 
-// ============================================================================
-// Command Handlers
-// ============================================================================
-
 /// Handle PATH management commands
 fn handle_path_command(action: PathAction) -> Result<()> {
     println!();
     match action {
-        PathAction::Add { path, system, force } => {
+        PathAction::Add {
+            path,
+            system,
+            force,
+        } => {
             println!("  {} path entry...", color::info("adding"));
             path::add(&path, system, force)
         }
-        PathAction::Remove { path, system, force } => {
+        PathAction::Remove {
+            path,
+            system,
+            force,
+        } => {
             println!("  {} path entry...", color::info("removing"));
             path::remove(&path, system, force)
         }
@@ -239,4 +257,27 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle delete commands
+fn handle_del_command(path: String, force: bool, dry_run: bool, verbose: bool) -> Result<()> {
+    println!();
+    if dry_run {
+        println!("  {} files...", color::info("previewing"));
+    } else {
+        println!("  {} files...", color::info("deleting"));
+    }
+
+    let summary = del::delete(&path, force, dry_run, verbose)?;
+
+    if summary.files_deleted > 0 || summary.dirs_deleted > 0 {
+        println!();
+        println!(
+            "  {} {}",
+            color::success_symbol(),
+            del::format_summary(&summary)
+        );
+    }
+
+    Ok(())
 }
