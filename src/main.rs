@@ -9,6 +9,7 @@ mod alias;
 mod color;
 mod del;
 mod init;
+mod kill;
 mod notify;
 mod path;
 mod shot;
@@ -78,6 +79,33 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Kill processes by name, port, or PID (safe)
+    Kill {
+        /// Target: a port number, or a process name (glob: *, ?)
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
+
+        /// Kill the process on this TCP port
+        #[arg(short, long)]
+        port: Option<u16>,
+
+        /// Kill by process ID
+        #[arg(long)]
+        pid: Option<u32>,
+
+        /// Kill by process name (glob)
+        #[arg(short = 'N', long)]
+        name: Option<String>,
+
+        /// Kill without confirmation
+        #[arg(short, long)]
+        force: bool,
+
+        /// Dry run - show what would be killed
+        #[arg(short = 'n', long)]
+        dry_run: bool,
     },
 
     /// Print a directory tree (respects .gitignore)
@@ -257,6 +285,14 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Kill {
+            target,
+            port,
+            pid,
+            name,
+            force,
+            dry_run,
+        } => handle_kill_command(target, port, pid, name, force, dry_run),
         Command::Tree {
             path,
             all,
@@ -355,6 +391,20 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle process kill commands
+fn handle_kill_command(
+    target: Option<String>,
+    port: Option<u16>,
+    pid: Option<u32>,
+    name: Option<String>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
+    println!();
+    let selector = kill::resolve_selector(target, port, pid, name)?;
+    kill::run(selector, force, dry_run)
 }
 
 /// Handle directory tree commands

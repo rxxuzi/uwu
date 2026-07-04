@@ -1,6 +1,6 @@
 [package]
 name = "uwu"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
 authors = ["rxxuzi"]
 description = "UWU - Windows Utilities"
@@ -40,8 +40,11 @@ windows = { version = "0.52", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
     "Win32_System_Console",
     "Win32_System_DataExchange",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_SystemInformation",
