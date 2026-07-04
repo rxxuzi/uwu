@@ -11,6 +11,7 @@ mod del;
 mod init;
 mod notify;
 mod path;
+mod shot;
 mod utils;
 mod wdex;
 mod web;
@@ -76,6 +77,29 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Capture a screenshot to a file or the clipboard
+    Shot {
+        /// Output file (PNG/JPG/BMP). Omit to auto-name uwu_screenshot_<timestamp>.png
+        #[arg(value_name = "FILE")]
+        file: Option<String>,
+
+        /// Copy to the clipboard instead of saving a file
+        #[arg(short = 'c', long)]
+        clip: bool,
+
+        /// Capture the active window instead of the full screen
+        #[arg(short, long)]
+        window: bool,
+
+        /// Interactive region selection (Win+Shift+S style)
+        #[arg(short, long)]
+        region: bool,
+
+        /// Delay in seconds before capturing
+        #[arg(short, long, default_value_t = 0)]
+        delay: u64,
     },
 
     /// Send a Windows toast notification
@@ -214,6 +238,13 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Shot {
+            file,
+            clip,
+            window,
+            region,
+            delay,
+        } => handle_shot_command(file, clip, window, region, delay),
         Command::Notify { message, title } => handle_notify_command(message, title),
         Command::Init => init::run(),
         Command::Reload => {
@@ -320,6 +351,28 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle screenshot commands
+fn handle_shot_command(
+    file: Option<String>,
+    clip: bool,
+    window: bool,
+    region: bool,
+    delay: u64,
+) -> Result<()> {
+    println!();
+    if region {
+        println!("  {} region...", color::info("select a"));
+    } else {
+        println!("  {} screenshot...", color::info("capturing"));
+    }
+
+    match shot::capture(file.as_deref(), window, region, clip, delay)? {
+        Some(path) => utils::print_success(&format!("saved: {}", path)),
+        None => utils::print_success("copied to clipboard"),
+    }
+    Ok(())
 }
 
 /// Handle notify commands
