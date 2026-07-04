@@ -248,11 +248,6 @@ fn main() -> Result<()> {
     // Configure global settings
     configure_environment(&cli);
 
-    // Show a cute banner if not quiet
-    if !cli.quiet {
-        show_banner();
-    }
-
     // Route to appropriate command handler
     let result = match cli.command {
         Command::Alias {
@@ -295,11 +290,6 @@ fn main() -> Result<()> {
         } => handle_del_command(path, force, dry_run, verbose),
     };
 
-    // Show a cute footer if successful and not quiet
-    if result.is_ok() && !cli.quiet {
-        show_footer();
-    }
-
     result
 }
 
@@ -309,23 +299,6 @@ fn configure_environment(cli: &Cli) {
 
     // Initialize crossterm colors
     color::init_colors();
-}
-
-/// Show a cute banner
-fn show_banner() {
-    println!();
-    println!(
-        "  {} ~ {}",
-        color::accent("uwu"),
-        color::info("windows utilities")
-    );
-}
-
-/// Show a cute footer
-fn show_footer() {
-    println!();
-    println!("  {}", color::note("~ done ~"));
-    println!();
 }
 
 /// Handle PATH management commands
