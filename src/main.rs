@@ -5,8 +5,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod alias;
 mod color;
 mod del;
+mod init;
 mod path;
 mod utils;
 mod wdex;
@@ -51,6 +53,35 @@ enum Command {
         #[arg(short = 'p', long)]
         provider: Option<String>,
     },
+
+    /// Manage command aliases
+    Alias {
+        /// Alias name (omit to list all)
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
+
+        /// Command to alias to (omit to show alias)
+        #[arg(value_name = "COMMAND", trailing_var_arg = true)]
+        command: Vec<String>,
+
+        /// List all aliases
+        #[arg(short, long)]
+        ls: bool,
+
+        /// Remove the alias
+        #[arg(short, long)]
+        rm: bool,
+
+        /// Output loader script for PowerShell profile
+        #[arg(long, hide = true)]
+        load: bool,
+    },
+
+    /// Initialize uwu (set up PowerShell profile)
+    Init,
+
+    /// Reload shell session (apply alias changes)
+    Reload,
 
     /// Delete files/directories recursively (safe rm -rf)
     Del {
@@ -149,6 +180,11 @@ enum WdexAction {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Handle alias --load silently (used by PowerShell profile, no banner/footer)
+    if let Command::Alias { load: true, .. } = &cli.command {
+        return alias::load();
+    }
+
     // Configure global settings
     configure_environment(&cli);
 
@@ -159,6 +195,20 @@ fn main() -> Result<()> {
 
     // Route to appropriate command handler
     let result = match cli.command {
+        Command::Alias {
+            name,
+            command,
+            ls,
+            rm,
+            ..
+        } => handle_alias_command(name, command, ls, rm),
+        Command::Init => init::run(),
+        Command::Reload => {
+            println!();
+            utils::print_warn("reload is handled by the PowerShell wrapper.");
+            println!("  run '{}' first to set it up.", color::accent("uwu init"));
+            Ok(())
+        }
         Command::Path { action } => handle_path_command(action),
         Command::Wdex { action } => handle_wdex_command(action),
         Command::Web { query, provider } => handle_web_command(query, provider),
@@ -257,6 +307,28 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle alias commands
+fn handle_alias_command(
+    name: Option<String>,
+    command: Vec<String>,
+    ls: bool,
+    rm: bool,
+) -> Result<()> {
+    if ls {
+        return alias::list();
+    }
+
+    match name {
+        None => alias::list(),
+        Some(name) if rm => alias::remove(&name),
+        Some(name) if command.is_empty() => alias::show(&name),
+        Some(name) => {
+            let cmd = command.join(" ");
+            alias::add(&name, &cmd)
+        }
+    }
 }
 
 /// Handle delete commands

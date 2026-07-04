@@ -1,64 +1,25 @@
-# Rust
-target/
-Cargo.lock
+# Whitelist .gitignore — ignore everything, then re-include only the trees we track.
+# Re-includes are SCOPED to specific directories (not global file types), so anything
+# not listed — target/, archive/, doc/, CLAUDE.md, any stray file or new folder — is
+# ignored by DEFAULT. There is nothing to remember to exclude.
+#
+#   *          ignore everything
+#   !*/        let git descend into subdirectories (required to reach nested files)
+#   !/dir/**   re-include one tracked tree
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# ignore everything
+*
 
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# descend into every directory (so the re-includes below can reach nested files)
+!*/
 
-# Executables
-*.exe
-*.out
-*.app
+# root files we keep
+!/.gitignore
+!/README.md
+!/LICENSE*
+!/Cargo.toml
+!/Cargo.lock
 
-# Debug files
-*.pdb
-*.dSYM/
-
-# Temporary files
-*.tmp
-*.temp
-.cache/
-
-# Logs
-*.log
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Coverage reports
-*.profraw
-*.profdata
-lcov.info
-coverage/
-
-# Backup files
-*.bak
-*.orig
-*.1
-
-package-lock.json
-yarn.lock
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Local configuration
-config/local.toml
-archive/
-.claude/
-doc
+# the trees we track: the source (code + embedded png/ico assets) and the tests
+!/src/**
+!/tests/**
