@@ -6,13 +6,14 @@
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use winreg::enums::*;
 use winreg::RegKey;
 
 use crate::{color, utils};
 
-/// Normalizes a Windows path by removing UNC prefixes and standardizing separators.
+/// Normalizes a Windows path by removing UNC prefixes, standardizing separators,
+/// and lexically collapsing `.` / `..` segments (e.g. `C:\a\.\b` -> `C:\a\b`).
 fn normalize_windows_path(path: &str) -> String {
     let path = path.trim();
 
@@ -23,8 +24,31 @@ fn normalize_windows_path(path: &str) -> String {
         path
     };
 
-    // Standardize path separators and remove trailing backslash
-    without_prefix
+    // Standardize path separators first so components() sees consistent separators
+    let unified = without_prefix.replace('/', "\\");
+
+    // Lexically collapse `.` and `..` segments without touching the filesystem
+    // (so it also works for --force adds of not-yet-existing paths).
+    let mut result = PathBuf::new();
+    for comp in Path::new(&unified).components() {
+        match comp {
+            Component::CurDir => {}                  // drop "."
+            Component::ParentDir => {
+                result.pop();                        // resolve ".." lexically
+            }
+            other => result.push(other.as_os_str()),
+        }
+    }
+
+    // Fall back to the unified string if normalization yielded nothing
+    let collapsed = result.to_string_lossy();
+    let collapsed = if collapsed.is_empty() {
+        unified.as_str()
+    } else {
+        &collapsed
+    };
+
+    collapsed
         .replace('/', "\\")
         .trim_end_matches('\\')
         .to_string()
@@ -412,5 +436,49 @@ fn print_path_entries(path_str: &str, indent: &str) {
                 color::error("(not found)")
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_collapses_current_dir_segment() {
+        // Regression: `path add .\bin` used to store `C:\proj\.\bin` verbatim
+        assert_eq!(normalize_windows_path(r"C:\proj\.\bin"), r"C:\proj\bin");
+    }
+
+    #[test]
+    fn normalize_collapses_parent_dir_segment() {
+        assert_eq!(normalize_windows_path(r"C:\a\b\..\c"), r"C:\a\c");
+    }
+
+    #[test]
+    fn normalize_strips_trailing_backslash() {
+        assert_eq!(normalize_windows_path(r"C:\proj\bin\"), r"C:\proj\bin");
+    }
+
+    #[test]
+    fn normalize_unifies_forward_slashes() {
+        assert_eq!(normalize_windows_path("C:/proj/bin"), r"C:\proj\bin");
+    }
+
+    #[test]
+    fn normalize_strips_unc_prefix() {
+        assert_eq!(normalize_windows_path(r"\\?\C:\proj\bin"), r"C:\proj\bin");
+    }
+
+    #[test]
+    fn normalize_plain_path_unchanged() {
+        assert_eq!(normalize_windows_path(r"C:\proj\bin"), r"C:\proj\bin");
+    }
+
+    #[test]
+    fn normalize_for_comparison_is_case_insensitive() {
+        assert_eq!(
+            normalize_for_comparison(r"C:\Proj\.\Bin"),
+            normalize_for_comparison(r"c:\proj\bin")
+        );
     }
 }
