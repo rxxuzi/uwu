@@ -2,13 +2,14 @@
 //!
 //! A minimal and cute Windows utility toolkit written in Rust.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 
 mod alias;
 mod color;
 mod del;
 mod init;
+mod notify;
 mod path;
 mod utils;
 mod wdex;
@@ -75,6 +76,17 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Send a Windows toast notification
+    Notify {
+        /// Message body to show (multiple words allowed)
+        #[arg(value_name = "MESSAGE")]
+        message: Vec<String>,
+
+        /// Notification title
+        #[arg(short, long, default_value = "uwu")]
+        title: String,
     },
 
     /// Initialize uwu (set up PowerShell profile)
@@ -202,6 +214,7 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Notify { message, title } => handle_notify_command(message, title),
         Command::Init => init::run(),
         Command::Reload => {
             println!();
@@ -307,6 +320,20 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle notify commands
+fn handle_notify_command(message: Vec<String>, title: String) -> Result<()> {
+    let body = message.join(" ");
+    if body.trim().is_empty() {
+        bail!("notify: a message is required");
+    }
+
+    println!();
+    println!("  {} notification...", color::info("sending"));
+    notify::send(&title, &body)?;
+    utils::print_success("notification sent");
+    Ok(())
 }
 
 /// Handle alias commands
