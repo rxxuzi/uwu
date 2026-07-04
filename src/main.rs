@@ -12,6 +12,7 @@ mod init;
 mod notify;
 mod path;
 mod shot;
+mod tree;
 mod utils;
 mod wdex;
 mod web;
@@ -77,6 +78,29 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Print a directory tree (respects .gitignore)
+    Tree {
+        /// Root directory (default: current directory)
+        #[arg(value_name = "PATH")]
+        path: Option<String>,
+
+        /// Show everything: hidden files and .gitignored entries
+        #[arg(short, long)]
+        all: bool,
+
+        /// Use ASCII connectors instead of Unicode box-drawing
+        #[arg(long)]
+        ascii: bool,
+
+        /// Maximum depth to descend
+        #[arg(short = 'L', long)]
+        level: Option<usize>,
+
+        /// List directories only
+        #[arg(short, long)]
+        dirs: bool,
     },
 
     /// Capture a screenshot to a file or the clipboard
@@ -238,6 +262,13 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Tree {
+            path,
+            all,
+            ascii,
+            level,
+            dirs,
+        } => handle_tree_command(path, all, ascii, level, dirs),
         Command::Shot {
             file,
             clip,
@@ -351,6 +382,18 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle directory tree commands
+fn handle_tree_command(
+    path: Option<String>,
+    all: bool,
+    ascii: bool,
+    level: Option<usize>,
+    dirs: bool,
+) -> Result<()> {
+    println!();
+    tree::print(path.as_deref().unwrap_or("."), all, ascii, level, dirs)
 }
 
 /// Handle screenshot commands

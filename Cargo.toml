@@ -1,6 +1,6 @@
 [package]
 name = "uwu"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 authors = ["rxxuzi"]
 description = "UWU - Windows Utilities"
@@ -28,6 +28,9 @@ serde_json = "1.0"
 
 # PNG encoding for screenshots (lightweight, pure Rust)
 png = "0.17"
+
+# .gitignore-aware directory walking for `tree` (ripgrep/fd's engine)
+ignore = "0.4"
 
 
 # Windows specific
