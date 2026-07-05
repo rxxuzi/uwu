@@ -123,6 +123,93 @@ pub fn wifi_list() -> Result<()> {
     Ok(())
 }
 
+/// Show the saved password for a Wi-Fi profile (explicit opt-in via `-p`).
+#[cfg(windows)]
+pub fn wifi_password(name: &str) -> Result<()> {
+    let xml = unsafe { wlan_profile_xml(name)? };
+    println!();
+    match extract_key_material(&xml) {
+        Some(key) => println!("  {} {} {}", color::accent(name), color::note("key"), key),
+        None => crate::utils::print_info("no password stored (open network?)"),
+    }
+    Ok(())
+}
+
+/// Connect to a Wi-Fi network. With a password, a profile is created first.
+#[cfg(windows)]
+pub fn wifi_connect(name: &str, pass: Option<&str>) -> Result<()> {
+    use anyhow::{bail, Context};
+    use std::process::Command;
+
+    println!();
+
+    // With a password, add a WPA2-PSK profile before connecting.
+    if let Some(pass) = pass {
+        let xml = build_profile_xml(name, pass);
+        let mut tmp = std::env::temp_dir();
+        tmp.push(format!("uwu_wifi_{}.xml", std::process::id()));
+        std::fs::write(&tmp, xml).context("failed to write Wi-Fi profile")?;
+
+        let add = Command::new("netsh")
+            .args(["wlan", "add", "profile"])
+            .arg(format!("filename={}", tmp.display()))
+            .output()
+            .context("failed to run netsh")?;
+        let _ = std::fs::remove_file(&tmp);
+        if !add.status.success() {
+            bail!("failed to add Wi-Fi profile for {}", name);
+        }
+    }
+
+    let status = Command::new("netsh")
+        .args(["wlan", "connect"])
+        .arg(format!("name={}", name))
+        .status()
+        .context("failed to run netsh")?;
+
+    if !status.success() {
+        bail!("failed to connect to {}", name);
+    }
+
+    crate::utils::print_success(&format!("connecting to {}", name));
+    Ok(())
+}
+
+/// Extract `<keyMaterial>...</keyMaterial>` from a WLAN profile XML.
+fn extract_key_material(xml: &str) -> Option<String> {
+    let start = xml.find("<keyMaterial>")? + "<keyMaterial>".len();
+    let end = xml[start..].find("</keyMaterial>")?;
+    Some(xml[start..start + end].to_string())
+}
+
+/// Minimal XML-escape for profile values.
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Build a WPA2-PSK WLAN profile XML for `name` with the given passphrase.
+fn build_profile_xml(name: &str, pass: &str) -> String {
+    let name = xml_escape(name);
+    let pass = xml_escape(pass);
+    format!(
+        r#"<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+  <name>{name}</name>
+  <SSIDConfig><SSID><name>{name}</name></SSID></SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM><security>
+    <authEncryption><authentication>WPA2PSK</authentication><encryption>AES</encryption><useOneX>false</useOneX></authEncryption>
+    <sharedKey><keyType>passPhrase</keyType><protected>false</protected><keyMaterial>{pass}</keyMaterial></sharedKey>
+  </security></MSM>
+</WLANProfile>"#
+    )
+}
+
 #[cfg(windows)]
 fn row(label: &str, value: &str) {
     // Pad the plain label first, then colorize — otherwise the ANSI codes are
@@ -331,6 +418,66 @@ unsafe fn wlan_info() -> (Option<String>, Vec<String>) {
     (ssid, profiles)
 }
 
+/// Fetch a Wi-Fi profile's XML including the plaintext key.
+#[cfg(windows)]
+unsafe fn wlan_profile_xml(name: &str) -> Result<String> {
+    use anyhow::bail;
+    use std::ffi::c_void;
+    use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::NetworkManagement::WiFi::{
+        WlanCloseHandle, WlanEnumInterfaces, WlanFreeMemory, WlanGetProfile, WlanOpenHandle,
+        WLAN_INTERFACE_INFO_LIST,
+    };
+
+    const WLAN_PROFILE_GET_PLAINTEXT_KEY: u32 = 4;
+
+    let mut handle = HANDLE::default();
+    let mut negotiated = 0u32;
+    if WlanOpenHandle(2, None, &mut negotiated, &mut handle) != 0 {
+        bail!("failed to open the WLAN service");
+    }
+
+    // Use the first wireless interface.
+    let mut iface_list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
+    if WlanEnumInterfaces(handle, None, &mut iface_list) != 0 || iface_list.is_null() {
+        WlanCloseHandle(handle, None);
+        bail!("no Wi-Fi interface found");
+    }
+    let list = &*iface_list;
+    if list.dwNumberOfItems == 0 {
+        WlanFreeMemory(iface_list as *const c_void);
+        WlanCloseHandle(handle, None);
+        bail!("no Wi-Fi interface found");
+    }
+    let guid = (*list.InterfaceInfo.as_ptr()).InterfaceGuid;
+    WlanFreeMemory(iface_list as *const c_void);
+
+    let name_w: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut flags: u32 = WLAN_PROFILE_GET_PLAINTEXT_KEY;
+    let mut xml_ptr = PWSTR::null();
+
+    let ret = WlanGetProfile(
+        handle,
+        &guid,
+        PCWSTR(name_w.as_ptr()),
+        None,
+        &mut xml_ptr,
+        Some(&mut flags),
+        None,
+    );
+
+    if ret != 0 || xml_ptr.is_null() {
+        WlanCloseHandle(handle, None);
+        bail!("no saved profile named '{}'", name);
+    }
+
+    let xml = xml_ptr.to_string().unwrap_or_default();
+    WlanFreeMemory(xml_ptr.0 as *const c_void);
+    WlanCloseHandle(handle, None);
+    Ok(xml)
+}
+
 /// Read a null-terminated UTF-16 fixed buffer into a String.
 #[cfg(windows)]
 fn wide_to_string(w: &[u16]) -> String {
@@ -360,6 +507,14 @@ pub fn wifi_list() -> Result<()> {
     unsupported()
 }
 #[cfg(not(windows))]
+pub fn wifi_password(_name: &str) -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
+pub fn wifi_connect(_name: &str, _pass: Option<&str>) -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
 fn unsupported() -> Result<()> {
     anyhow::bail!("net is only supported on Windows")
 }
@@ -386,6 +541,25 @@ mod tests {
             w[i] = c;
         }
         assert_eq!(wide_to_string(&w), "hi");
+    }
+
+    #[test]
+    fn extract_key_material_finds_password() {
+        let xml = "<foo/><keyMaterial>hunter2</keyMaterial><bar/>";
+        assert_eq!(extract_key_material(xml).as_deref(), Some("hunter2"));
+    }
+
+    #[test]
+    fn extract_key_material_absent() {
+        assert_eq!(extract_key_material("<open/>"), None);
+    }
+
+    #[test]
+    fn build_profile_escapes_and_embeds() {
+        let xml = build_profile_xml("My&Net", "p<a>ss");
+        assert!(xml.contains("<name>My&amp;Net</name>"));
+        assert!(xml.contains("<keyMaterial>p&lt;a&gt;ss</keyMaterial>"));
+        assert!(xml.contains("WPA2PSK"));
     }
 
     #[test]

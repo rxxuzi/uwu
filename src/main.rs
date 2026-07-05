@@ -343,8 +343,20 @@ enum NetAction {
     Dns,
     /// Show adapter MAC address(es)
     Mac,
-    /// List saved Wi-Fi networks
-    Wifi,
+    /// List, connect to, or inspect saved Wi-Fi networks
+    Wifi {
+        /// Network name (omit to list all)
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
+
+        /// Password to connect with (omit to use a saved profile)
+        #[arg(value_name = "PASSWORD")]
+        pass: Option<String>,
+
+        /// Show the saved password for NAME (explicit opt-in)
+        #[arg(short = 'p', long)]
+        password: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -515,7 +527,15 @@ fn handle_net_command(action: Option<NetAction>) -> Result<()> {
         Some(NetAction::Ip) => net::show_ip(),
         Some(NetAction::Dns) => net::show_dns(),
         Some(NetAction::Mac) => net::show_mac(),
-        Some(NetAction::Wifi) => net::wifi_list(),
+        Some(NetAction::Wifi {
+            name,
+            pass,
+            password,
+        }) => match name {
+            None => net::wifi_list(),
+            Some(name) if password => net::wifi_password(&name),
+            Some(name) => net::wifi_connect(&name, pass.as_deref()),
+        },
     }
 }
 
