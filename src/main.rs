@@ -16,6 +16,7 @@ mod kill;
 mod notify;
 mod path;
 mod shot;
+mod sound;
 mod tree;
 mod utils;
 mod wdex;
@@ -82,6 +83,13 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Get or set the system volume (0-100, mute, unmute)
+    Sound {
+        /// 0-100, +N, -N, mute, unmute, toggle (omit to show current)
+        #[arg(value_name = "LEVEL")]
+        level: Option<String>,
     },
 
     /// Relaunch an elevated PowerShell in this directory
@@ -342,6 +350,7 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Sound { level } => sound::run(level.as_deref()),
         Command::Admin => admin::run(),
         Command::Env {
             key,
