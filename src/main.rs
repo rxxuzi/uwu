@@ -14,6 +14,7 @@ mod go;
 mod init;
 mod kill;
 mod mixer;
+mod net;
 mod notify;
 mod path;
 mod shot;
@@ -84,6 +85,12 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Show network info (IP, DNS, MAC, Wi-Fi)
+    Net {
+        #[command(subcommand)]
+        action: Option<NetAction>,
     },
 
     /// Per-app volume mixer (interactive TUI)
@@ -328,6 +335,18 @@ enum WdexAction {
     List,
 }
 
+#[derive(Subcommand)]
+enum NetAction {
+    /// Show local IPv4 address(es)
+    Ip,
+    /// Show DNS servers
+    Dns,
+    /// Show adapter MAC address(es)
+    Mac,
+    /// List saved Wi-Fi networks
+    Wifi,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -361,6 +380,7 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Net { action } => handle_net_command(action),
         Command::Mixer { list } => mixer::run(list),
         Command::Sound { level } => sound::run(level.as_deref()),
         Command::Admin => admin::run(),
@@ -486,6 +506,17 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle network commands
+fn handle_net_command(action: Option<NetAction>) -> Result<()> {
+    match action {
+        None => net::dashboard(),
+        Some(NetAction::Ip) => net::show_ip(),
+        Some(NetAction::Dns) => net::show_dns(),
+        Some(NetAction::Mac) => net::show_mac(),
+        Some(NetAction::Wifi) => net::wifi_list(),
+    }
 }
 
 /// Handle environment variable commands

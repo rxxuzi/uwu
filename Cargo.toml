@@ -1,6 +1,6 @@
 [package]
 name = "uwu"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2021"
 authors = ["rxxuzi"]
 description = "UWU - Windows Utilities"
@@ -43,6 +43,8 @@ windows = { version = "0.52", features = [
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WiFi",
     "Win32_Networking_WinSock",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
