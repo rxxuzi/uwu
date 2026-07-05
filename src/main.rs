@@ -103,6 +103,9 @@ enum Command {
     /// Relaunch an elevated PowerShell in this directory
     Admin,
 
+    /// Print version information
+    Version,
+
     /// Manage environment variables
     Env {
         /// Variable name (omit to list all)
@@ -361,6 +364,10 @@ fn main() -> Result<()> {
         Command::Mixer { list } => mixer::run(list),
         Command::Sound { level } => sound::run(level.as_deref()),
         Command::Admin => admin::run(),
+        Command::Version => {
+            println!("uwu {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         Command::Env {
             key,
             value,
