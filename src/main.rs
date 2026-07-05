@@ -13,6 +13,7 @@ mod env;
 mod go;
 mod init;
 mod kill;
+mod mixer;
 mod notify;
 mod path;
 mod shot;
@@ -83,6 +84,13 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Per-app volume mixer (interactive TUI)
+    Mixer {
+        /// List sessions and volumes non-interactively (no TUI)
+        #[arg(short, long)]
+        list: bool,
     },
 
     /// Get or set the system volume (0-100, mute, unmute)
@@ -350,6 +358,7 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Mixer { list } => mixer::run(list),
         Command::Sound { level } => sound::run(level.as_deref()),
         Command::Admin => admin::run(),
         Command::Env {
