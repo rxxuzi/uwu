@@ -5,6 +5,7 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 
+mod admin;
 mod alias;
 mod color;
 mod del;
@@ -82,6 +83,9 @@ enum Command {
         #[arg(long, hide = true)]
         load: bool,
     },
+
+    /// Relaunch an elevated PowerShell in this directory
+    Admin,
 
     /// Manage environment variables
     Env {
@@ -338,6 +342,7 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Admin => admin::run(),
         Command::Env {
             key,
             value,
