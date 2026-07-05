@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 mod alias;
 mod color;
 mod del;
+mod go;
 mod init;
 mod kill;
 mod notify;
@@ -22,8 +23,8 @@ mod web;
 #[command(
     name = "uwu",
     version,
-    about = "uwu ~ windows utilities",
-    long_about = "a minimal and cute windows utility toolkit written in rust ~"
+    about = "uwu ~ uwu's Windows Utilities",
+    long_about = "uwu ~ uwu's Windows Utilities — a minimal and cute toolkit written in Rust"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -79,6 +80,25 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Jump to or manage directory bookmarks
+    Go {
+        /// Bookmark name (omit to list all)
+        #[arg(value_name = "ALIAS")]
+        alias: Option<String>,
+
+        /// Directory to bookmark (omit to jump/show)
+        #[arg(value_name = "PATH")]
+        path: Option<String>,
+
+        /// Remove the bookmark
+        #[arg(short, long)]
+        rm: bool,
+
+        /// Print the resolved path only (used by the shell wrapper)
+        #[arg(long, hide = true)]
+        resolve: bool,
     },
 
     /// Kill processes by name, port, or PID (safe)
@@ -273,6 +293,19 @@ fn main() -> Result<()> {
         return alias::load();
     }
 
+    // Handle `go --resolve <name>` silently (used by the PowerShell wrapper for cd)
+    if let Command::Go {
+        resolve: true,
+        alias,
+        ..
+    } = &cli.command
+    {
+        return match alias {
+            Some(name) => go::resolve(name),
+            None => anyhow::bail!("go --resolve requires a bookmark name"),
+        };
+    }
+
     // Configure global settings
     configure_environment(&cli);
 
@@ -285,6 +318,12 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Go {
+            alias,
+            path,
+            rm,
+            ..
+        } => handle_go_command(alias, path, rm),
         Command::Kill {
             target,
             port,
@@ -391,6 +430,16 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle directory bookmark commands
+fn handle_go_command(alias: Option<String>, path: Option<String>, rm: bool) -> Result<()> {
+    match (alias, path, rm) {
+        (None, _, _) => go::list(),
+        (Some(a), _, true) => go::remove(&a),
+        (Some(a), Some(p), false) => go::set(&a, &p),
+        (Some(a), None, false) => go::show(&a),
+    }
 }
 
 /// Handle process kill commands

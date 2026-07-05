@@ -20,7 +20,7 @@ const PROFILE_CONTENT: &str = r#"# uwu - windows utilities
 # Load aliases on startup
 Invoke-Expression (uwu.exe alias --load | Out-String)
 
-# Wrapper function: intercepts 'uwu reload' to reload in current session
+# Wrapper function: intercepts 'uwu reload' and 'uwu go <name>' for the current session
 function uwu {
     if ($args[0] -eq 'reload') {
         # Refresh PATH from the registry into the current session (like `source ~/.bashrc`)
@@ -29,6 +29,12 @@ function uwu {
         $env:Path = @($machine, $user | Where-Object { $_ }) -join ';'
         # Reload aliases and profile
         . $PROFILE
+        return
+    }
+    # 'uwu go <name>' jumps: resolve the bookmark and cd into it
+    if ($args[0] -eq 'go' -and $args.Count -eq 2 -and -not $args[1].StartsWith('-')) {
+        $dest = uwu.exe go --resolve $args[1]
+        if ($LASTEXITCODE -eq 0 -and $dest) { Set-Location $dest }
         return
     }
     uwu.exe @args
@@ -191,6 +197,13 @@ mod tests {
         assert!(PROFILE_CONTENT.contains("GetEnvironmentVariable('Path', 'Machine')"));
         assert!(PROFILE_CONTENT.contains("GetEnvironmentVariable('Path', 'User')"));
         assert!(PROFILE_CONTENT.contains("$env:Path ="));
+    }
+
+    #[test]
+    fn profile_content_has_go_wrapper() {
+        // 'uwu go <name>' must resolve a bookmark and Set-Location into it
+        assert!(PROFILE_CONTENT.contains("uwu.exe go --resolve"));
+        assert!(PROFILE_CONTENT.contains("Set-Location"));
     }
 
     #[test]
