@@ -385,7 +385,7 @@ fn set_path_variable(system: bool, new_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn broadcast_environment_change() {
+pub(crate) fn broadcast_environment_change() {
     #[cfg(windows)]
     {
         use windows::Win32::Foundation::*;

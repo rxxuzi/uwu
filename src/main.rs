@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 mod alias;
 mod color;
 mod del;
+mod env;
 mod go;
 mod init;
 mod kill;
@@ -80,6 +81,25 @@ enum Command {
         /// Output loader script for PowerShell profile
         #[arg(long, hide = true)]
         load: bool,
+    },
+
+    /// Manage environment variables
+    Env {
+        /// Variable name (omit to list all)
+        #[arg(value_name = "KEY")]
+        key: Option<String>,
+
+        /// Value to set (omit to show)
+        #[arg(value_name = "VALUE")]
+        value: Option<String>,
+
+        /// Target the system (machine) scope — requires admin
+        #[arg(short, long)]
+        system: bool,
+
+        /// Remove (unset) the variable
+        #[arg(short, long)]
+        rm: bool,
     },
 
     /// Jump to or manage directory bookmarks
@@ -318,6 +338,12 @@ fn main() -> Result<()> {
             rm,
             ..
         } => handle_alias_command(name, command, ls, rm),
+        Command::Env {
+            key,
+            value,
+            system,
+            rm,
+        } => handle_env_command(key, value, system, rm),
         Command::Go {
             alias,
             path,
@@ -430,6 +456,21 @@ fn handle_wdex_command(action: WdexAction) -> Result<()> {
 fn handle_web_command(query: Vec<String>, provider: Option<String>) -> Result<()> {
     let search_query = query.join(" ");
     web::open(&search_query, provider.as_deref())
+}
+
+/// Handle environment variable commands
+fn handle_env_command(
+    key: Option<String>,
+    value: Option<String>,
+    system: bool,
+    rm: bool,
+) -> Result<()> {
+    match (key, value, rm) {
+        (None, _, _) => env::list(system),
+        (Some(k), _, true) => env::remove(&k, system),
+        (Some(k), Some(v), false) => env::set(&k, &v, system),
+        (Some(k), None, false) => env::get(&k, system),
+    }
 }
 
 /// Handle directory bookmark commands

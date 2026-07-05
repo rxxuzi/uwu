@@ -23,7 +23,14 @@ Invoke-Expression (uwu.exe alias --load | Out-String)
 # Wrapper function: intercepts 'uwu reload' and 'uwu go <name>' for the current session
 function uwu {
     if ($args[0] -eq 'reload') {
-        # Refresh PATH from the registry into the current session (like `source ~/.bashrc`)
+        # Re-import all environment variables from the registry (like `source ~/.bashrc`).
+        # Machine first, then User overlays it. PATH is handled specially below.
+        foreach ($scope in 'Machine', 'User') {
+            foreach ($kv in ([Environment]::GetEnvironmentVariables($scope)).GetEnumerator()) {
+                if ($kv.Key -ne 'Path') { Set-Item -Path "env:$($kv.Key)" -Value $kv.Value }
+            }
+        }
+        # PATH is the concatenation of Machine + User, not an overwrite
         $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
         $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
         $env:Path = @($machine, $user | Where-Object { $_ }) -join ';'
@@ -197,6 +204,13 @@ mod tests {
         assert!(PROFILE_CONTENT.contains("GetEnvironmentVariable('Path', 'Machine')"));
         assert!(PROFILE_CONTENT.contains("GetEnvironmentVariable('Path', 'User')"));
         assert!(PROFILE_CONTENT.contains("$env:Path ="));
+    }
+
+    #[test]
+    fn profile_content_reload_refreshes_all_env_vars() {
+        // reload must re-import every env var, not just PATH
+        assert!(PROFILE_CONTENT.contains("GetEnvironmentVariables("));
+        assert!(PROFILE_CONTENT.contains("Set-Item -Path \"env:"));
     }
 
     #[test]
