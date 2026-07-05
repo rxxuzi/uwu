@@ -17,6 +17,7 @@ struct Adapter {
     gateways: Vec<String>,
     dns: Vec<String>,
     up: bool,
+    if_type: u32,
 }
 
 #[cfg(windows)]
@@ -113,23 +114,50 @@ pub fn wifi_list() -> Result<()> {
     }
 
     println!("  {}", color::header("saved wi-fi:"));
-    for name in profiles {
-        if Some(&name) == current.as_ref() {
-            println!("    {} {}", color::accent(&name), color::success("(connected)"));
+    for (i, name) in profiles.iter().enumerate() {
+        let num = format!("{}.", i + 1);
+        if Some(name) == current.as_ref() {
+            println!(
+                "    {:<3} {} {}",
+                num,
+                color::accent(name),
+                color::success("(connected)")
+            );
         } else {
-            println!("    {}", name);
+            println!("    {:<3} {}", num, name);
         }
     }
     Ok(())
 }
 
+/// Resolve a Wi-Fi argument (1-based index from `net wifi`, or a name matched
+/// case-insensitively) to the exact saved profile name.
+#[cfg(windows)]
+fn resolve_profile(arg: &str) -> Result<String> {
+    let (_, profiles) = unsafe { wlan_info() };
+
+    if let Ok(idx) = arg.parse::<usize>() {
+        if idx >= 1 && idx <= profiles.len() {
+            return Ok(profiles[idx - 1].clone());
+        }
+        anyhow::bail!("no saved network at index {} (see 'uwu net wifi')", idx);
+    }
+
+    profiles
+        .iter()
+        .find(|p| p.eq_ignore_ascii_case(arg))
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("no saved network '{}' (see 'uwu net wifi')", arg))
+}
+
 /// Show the saved password for a Wi-Fi profile (explicit opt-in via `-p`).
 #[cfg(windows)]
 pub fn wifi_password(name: &str) -> Result<()> {
-    let xml = unsafe { wlan_profile_xml(name)? };
+    let name = resolve_profile(name)?;
+    let xml = unsafe { wlan_profile_xml(&name)? };
     println!();
     match extract_key_material(&xml) {
-        Some(key) => println!("  {} {} {}", color::accent(name), color::note("key"), key),
+        Some(key) => println!("  {} {} {}", color::accent(&name), color::note("key"), key),
         None => crate::utils::print_info("no password stored (open network?)"),
     }
     Ok(())
@@ -141,11 +169,18 @@ pub fn wifi_connect(name: &str, pass: Option<&str>) -> Result<()> {
     use anyhow::{bail, Context};
     use std::process::Command;
 
+    // Without a password we connect to a saved profile, so accept an index or
+    // case-insensitive name. With a password, `name` is the SSID to join as-is.
+    let name = match pass {
+        Some(_) => name.to_string(),
+        None => resolve_profile(name)?,
+    };
+
     println!();
 
     // With a password, add a WPA2-PSK profile before connecting.
     if let Some(pass) = pass {
-        let xml = build_profile_xml(name, pass);
+        let xml = build_profile_xml(&name, pass);
         let mut tmp = std::env::temp_dir();
         tmp.push(format!("uwu_wifi_{}.xml", std::process::id()));
         std::fs::write(&tmp, xml).context("failed to write Wi-Fi profile")?;
@@ -173,6 +208,184 @@ pub fn wifi_connect(name: &str, pass: Option<&str>) -> Result<()> {
 
     crate::utils::print_success(&format!("connecting to {}", name));
     Ok(())
+}
+
+/// Flush the DNS resolver cache (harmless, no admin needed).
+#[cfg(windows)]
+pub fn flush() -> Result<()> {
+    println!();
+    run("ipconfig", &["/flushdns".to_string()])?;
+    crate::utils::print_success("flushed DNS cache");
+    Ok(())
+}
+
+/// Disconnect the current Wi-Fi (radio stays on).
+#[cfg(windows)]
+pub fn disconnect() -> Result<()> {
+    println!();
+    if !confirm("disconnect Wi-Fi?")? {
+        return Ok(());
+    }
+    run("netsh", &["wlan".into(), "disconnect".into()])?;
+    crate::utils::print_success("disconnected");
+    Ok(())
+}
+
+/// Enable or disable the Wi-Fi adapter (needs admin).
+#[cfg(windows)]
+pub fn radio(on: bool) -> Result<()> {
+    println!();
+    require_admin("changing the Wi-Fi radio")?;
+    let name = wifi_adapter_name()?;
+    if !on && !confirm("disable the Wi-Fi adapter?")? {
+        return Ok(());
+    }
+    let admin = if on { "enabled" } else { "disabled" };
+    run(
+        "netsh",
+        &[
+            "interface".into(),
+            "set".into(),
+            "interface".into(),
+            format!("name={}", name),
+            format!("admin={}", admin),
+        ],
+    )?;
+    crate::utils::print_success(if on { "Wi-Fi enabled" } else { "Wi-Fi disabled" });
+    Ok(())
+}
+
+/// Set DNS servers on the primary adapter (needs admin).
+#[cfg(windows)]
+pub fn set_dns(servers: &[String]) -> Result<()> {
+    println!();
+    require_admin("setting DNS")?;
+    let name = primary_adapter_name()?;
+    if !confirm(&format!("set DNS to {} on {}?", servers.join(", "), name))? {
+        return Ok(());
+    }
+
+    run(
+        "netsh",
+        &[
+            "interface".into(),
+            "ip".into(),
+            "set".into(),
+            "dns".into(),
+            format!("name={}", name),
+            "static".into(),
+            servers[0].clone(),
+        ],
+    )?;
+    for (i, srv) in servers.iter().enumerate().skip(1) {
+        run(
+            "netsh",
+            &[
+                "interface".into(),
+                "ip".into(),
+                "add".into(),
+                "dns".into(),
+                format!("name={}", name),
+                srv.clone(),
+                format!("index={}", i + 1),
+            ],
+        )?;
+    }
+    crate::utils::print_success(&format!("DNS set to {}", servers.join(", ")));
+    Ok(())
+}
+
+/// Revert the primary adapter's DNS to automatic (DHCP) (needs admin).
+#[cfg(windows)]
+pub fn dns_auto() -> Result<()> {
+    println!();
+    require_admin("setting DNS")?;
+    let name = primary_adapter_name()?;
+    run(
+        "netsh",
+        &[
+            "interface".into(),
+            "ip".into(),
+            "set".into(),
+            "dns".into(),
+            format!("name={}", name),
+            "dhcp".into(),
+        ],
+    )?;
+    crate::utils::print_success("DNS reverted to automatic (DHCP)");
+    Ok(())
+}
+
+/// Reset the network stack — winsock catalog (needs admin, reboot required).
+#[cfg(windows)]
+pub fn reset() -> Result<()> {
+    println!();
+    require_admin("resetting the network stack")?;
+    if !confirm("reset winsock? (a reboot will be required)")? {
+        return Ok(());
+    }
+    run("netsh", &["winsock".into(), "reset".into()])?;
+    crate::utils::print_success("winsock reset — restart your PC to finish");
+    Ok(())
+}
+
+/// Run a command silently, mapping a non-zero exit to an error.
+/// Output is captured (not shown) so we only surface uwu's own messages —
+/// this also avoids leaking localized `netsh`/`ipconfig` text.
+#[cfg(windows)]
+fn run(program: &str, args: &[String]) -> Result<()> {
+    use anyhow::{bail, Context};
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .with_context(|| format!("failed to run {}", program))?;
+    if !output.status.success() {
+        bail!("{} failed", program);
+    }
+    Ok(())
+}
+
+/// Bail unless running elevated.
+#[cfg(windows)]
+fn require_admin(action: &str) -> Result<()> {
+    if !crate::utils::is_elevated() {
+        anyhow::bail!("{} requires administrator privileges (run 'uwu admin')", action);
+    }
+    Ok(())
+}
+
+/// Yes/no confirmation prompt (default no).
+#[cfg(windows)]
+fn confirm(question: &str) -> Result<bool> {
+    use std::io::{self, Write};
+    print!("  {} {} [y/N]: ", color::warn("!"), question);
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(input.trim().eq_ignore_ascii_case("y"))
+}
+
+/// Friendly name of the primary adapter (has a default gateway).
+#[cfg(windows)]
+fn primary_adapter_name() -> Result<String> {
+    let adapters = unsafe { collect_adapters()? };
+    adapters
+        .iter()
+        .find(|a| a.relevant() && !a.gateways.is_empty())
+        .or_else(|| adapters.iter().find(|a| a.relevant()))
+        .map(|a| a.name.clone())
+        .ok_or_else(|| anyhow::anyhow!("no active network adapter"))
+}
+
+/// Friendly name of the wireless adapter (IF_TYPE_IEEE80211 = 71).
+#[cfg(windows)]
+fn wifi_adapter_name() -> Result<String> {
+    let adapters = unsafe { collect_adapters()? };
+    adapters
+        .iter()
+        .find(|a| a.if_type == 71)
+        .map(|a| a.name.clone())
+        .ok_or_else(|| anyhow::anyhow!("no Wi-Fi adapter found"))
 }
 
 /// Extract `<keyMaterial>...</keyMaterial>` from a WLAN profile XML.
@@ -302,6 +515,7 @@ unsafe fn collect_adapters() -> anyhow::Result<Vec<Adapter>> {
             gateways,
             dns,
             up: a.OperStatus.0 == 1, // IfOperStatusUp
+            if_type: a.IfType,
         });
 
         cur = a.Next;
@@ -515,6 +729,30 @@ pub fn wifi_connect(_name: &str, _pass: Option<&str>) -> Result<()> {
     unsupported()
 }
 #[cfg(not(windows))]
+pub fn flush() -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
+pub fn disconnect() -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
+pub fn radio(_on: bool) -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
+pub fn set_dns(_servers: &[String]) -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
+pub fn dns_auto() -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
+pub fn reset() -> Result<()> {
+    unsupported()
+}
+#[cfg(not(windows))]
 fn unsupported() -> Result<()> {
     anyhow::bail!("net is only supported on Windows")
 }
@@ -571,6 +809,7 @@ mod tests {
             gateways: vec![],
             dns: vec![],
             up,
+            if_type: 71,
         };
         assert!(mk("Wi-Fi", true, true).relevant());
         assert!(!mk("Loopback Pseudo-Interface 1", true, true).relevant());

@@ -339,10 +339,24 @@ enum WdexAction {
 enum NetAction {
     /// Show local IPv4 address(es)
     Ip,
-    /// Show DNS servers
-    Dns,
+    /// Show, set, or reset DNS servers (e.g. `dns 1.1.1.1`, `dns auto`)
+    Dns {
+        /// DNS servers to set, or "auto" for DHCP (omit to show current)
+        #[arg(value_name = "SERVER")]
+        servers: Vec<String>,
+    },
     /// Show adapter MAC address(es)
     Mac,
+    /// Enable the Wi-Fi adapter
+    On,
+    /// Disable the Wi-Fi adapter
+    Off,
+    /// Disconnect the current Wi-Fi
+    Disconnect,
+    /// Flush the DNS resolver cache
+    Flush,
+    /// Reset the network stack (admin; reboot required)
+    Reset,
     /// List, connect to, or inspect saved Wi-Fi networks
     Wifi {
         /// Network name (omit to list all)
@@ -525,8 +539,17 @@ fn handle_net_command(action: Option<NetAction>) -> Result<()> {
     match action {
         None => net::dashboard(),
         Some(NetAction::Ip) => net::show_ip(),
-        Some(NetAction::Dns) => net::show_dns(),
+        Some(NetAction::Dns { servers }) => match servers.first().map(|s| s.as_str()) {
+            None => net::show_dns(),
+            Some("auto") => net::dns_auto(),
+            _ => net::set_dns(&servers),
+        },
         Some(NetAction::Mac) => net::show_mac(),
+        Some(NetAction::On) => net::radio(true),
+        Some(NetAction::Off) => net::radio(false),
+        Some(NetAction::Disconnect) => net::disconnect(),
+        Some(NetAction::Flush) => net::flush(),
+        Some(NetAction::Reset) => net::reset(),
         Some(NetAction::Wifi {
             name,
             pass,
