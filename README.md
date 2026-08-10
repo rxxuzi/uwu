@@ -1,6 +1,6 @@
 # uwu
 
-> **uwu** ~ **u**wu's **W**indows **U**tilities — a minimal and cute toolkit written in Rust
+> **uwu** ~ **u**wu's **W**indows **U**tilities — a minimal and cute toolkit written in Rust![img.png](img.png)
 
 **uwu** bundles the little Windows chores that usually mean digging through
 `reg.exe`, `netsh`, Task Manager, or a new terminal into one small, fast CLI.

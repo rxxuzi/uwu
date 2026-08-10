@@ -17,7 +17,6 @@ struct Adapter {
     gateways: Vec<String>,
     dns: Vec<String>,
     up: bool,
-    if_type: u32,
 }
 
 #[cfg(windows)]
@@ -231,35 +230,95 @@ pub fn disconnect() -> Result<()> {
     Ok(())
 }
 
-/// Enable or disable the Wi-Fi adapter (needs admin).
+/// Turn the Wi-Fi radio on or off.
+///
+/// This drives the *software radio state* through the WLAN API
+/// (`WlanSetInterface` + `wlan_intf_opcode_radio_state`) — the same soft kill
+/// switch as the Windows Wi-Fi toggle. Unlike disabling the adapter itself
+/// (`netsh interface set interface admin=...`), this needs **no admin**.
 #[cfg(windows)]
 pub fn radio(on: bool) -> Result<()> {
     println!();
-    require_admin("changing the Wi-Fi radio")?;
-    let name = wifi_adapter_name()?;
-    if !on && !confirm("disable the Wi-Fi adapter?")? {
+    if !on && !confirm("turn Wi-Fi off?")? {
         return Ok(());
     }
-    let admin = if on { "enabled" } else { "disabled" };
-    run(
-        "netsh",
-        &[
-            "interface".into(),
-            "set".into(),
-            "interface".into(),
-            format!("name={}", name),
-            format!("admin={}", admin),
-        ],
-    )?;
-    crate::utils::print_success(if on { "Wi-Fi enabled" } else { "Wi-Fi disabled" });
+    unsafe { set_radio_state(on)? };
+    crate::utils::print_success(if on { "Wi-Fi on" } else { "Wi-Fi off" });
     Ok(())
+}
+
+/// Set the software radio state on the first wireless interface.
+#[cfg(windows)]
+unsafe fn set_radio_state(on: bool) -> Result<()> {
+    use anyhow::bail;
+    use std::ffi::c_void;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::NetworkManagement::WiFi::{
+        dot11_radio_state_off, dot11_radio_state_on, dot11_radio_state_unknown,
+        wlan_intf_opcode_radio_state, WlanCloseHandle, WlanEnumInterfaces, WlanFreeMemory,
+        WlanOpenHandle, WlanSetInterface, WLAN_INTERFACE_INFO_LIST, WLAN_PHY_RADIO_STATE,
+    };
+
+    let mut handle = HANDLE::default();
+    let mut negotiated = 0u32;
+    if WlanOpenHandle(2, None, &mut negotiated, &mut handle) != 0 {
+        bail!("failed to open the WLAN service");
+    }
+
+    // Use the first wireless interface.
+    let mut iface_list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
+    if WlanEnumInterfaces(handle, None, &mut iface_list) != 0 || iface_list.is_null() {
+        WlanCloseHandle(handle, None);
+        bail!("no Wi-Fi interface found");
+    }
+    let list = &*iface_list;
+    if list.dwNumberOfItems == 0 {
+        WlanFreeMemory(iface_list as *const c_void);
+        WlanCloseHandle(handle, None);
+        bail!("no Wi-Fi interface found");
+    }
+    let guid = (*list.InterfaceInfo.as_ptr()).InterfaceGuid;
+    WlanFreeMemory(iface_list as *const c_void);
+
+    // Only the software radio state is settable; hardware state is read-only,
+    // so leave it unknown.
+    let state = WLAN_PHY_RADIO_STATE {
+        dwPhyIndex: 0,
+        dot11SoftwareRadioState: if on {
+            dot11_radio_state_on
+        } else {
+            dot11_radio_state_off
+        },
+        dot11HardwareRadioState: dot11_radio_state_unknown,
+    };
+
+    let ret = WlanSetInterface(
+        handle,
+        &guid,
+        wlan_intf_opcode_radio_state,
+        std::mem::size_of::<WLAN_PHY_RADIO_STATE>() as u32,
+        &state as *const _ as *const c_void,
+        None,
+    );
+    WlanCloseHandle(handle, None);
+
+    match ret {
+        0 => Ok(()),
+        // ERROR_ACCESS_DENIED — some hardware/policies gate the radio behind admin.
+        5 => bail!("access denied — this device requires admin to change the Wi-Fi radio"),
+        code => bail!("WlanSetInterface failed (code {code})"),
+    }
 }
 
 /// Set DNS servers on the primary adapter (needs admin).
 #[cfg(windows)]
 pub fn set_dns(servers: &[String]) -> Result<()> {
     println!();
-    require_admin("setting DNS")?;
+    if !crate::utils::is_elevated() {
+        let mut args = vec!["dns"];
+        args.extend(servers.iter().map(|s| s.as_str()));
+        return elevate_self(&args);
+    }
     let name = primary_adapter_name()?;
     if !confirm(&format!("set DNS to {} on {}?", servers.join(", "), name))? {
         return Ok(());
@@ -299,7 +358,9 @@ pub fn set_dns(servers: &[String]) -> Result<()> {
 #[cfg(windows)]
 pub fn dns_auto() -> Result<()> {
     println!();
-    require_admin("setting DNS")?;
+    if !crate::utils::is_elevated() {
+        return elevate_self(&["dns", "auto"]);
+    }
     let name = primary_adapter_name()?;
     run(
         "netsh",
@@ -320,7 +381,9 @@ pub fn dns_auto() -> Result<()> {
 #[cfg(windows)]
 pub fn reset() -> Result<()> {
     println!();
-    require_admin("resetting the network stack")?;
+    if !crate::utils::is_elevated() {
+        return elevate_self(&["reset"]);
+    }
     if !confirm("reset winsock? (a reboot will be required)")? {
         return Ok(());
     }
@@ -345,12 +408,51 @@ fn run(program: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Bail unless running elevated.
+/// Re-launch `uwu net <args>` elevated via UAC (the `runas` verb), since these
+/// operations need admin. The elevated child runs the command — and any
+/// confirmation — in its own console window, mirroring how `wdex` self-elevates.
+/// Returns once the UAC prompt is accepted; bails if it's declined or cancelled.
 #[cfg(windows)]
-fn require_admin(action: &str) -> Result<()> {
-    if !crate::utils::is_elevated() {
-        anyhow::bail!("{} requires administrator privileges (run 'uwu admin')", action);
+fn elevate_self(args: &[&str]) -> Result<()> {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    crate::utils::print_warn("administrator privileges required — requesting elevation");
+
+    let exe = std::env::current_exe()?;
+    let exe_w: Vec<u16> = exe
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // "net" plus the sub-action/arguments, space-joined (all tokens are simple:
+    // on/off/reset/auto or dotted IPs, so no quoting is needed).
+    let mut argv = vec!["net"];
+    argv.extend_from_slice(args);
+    let args_w: Vec<u16> = argv
+        .join(" ")
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            w!("runas"),
+            PCWSTR::from_raw(exe_w.as_ptr()),
+            PCWSTR::from_raw(args_w.as_ptr()),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    // ShellExecuteW returns a value > 32 on success.
+    if result.0 <= 32 {
+        anyhow::bail!("failed to elevate (UAC declined or cancelled)");
     }
+    crate::utils::print_info("running in the elevated window");
     Ok(())
 }
 
@@ -375,17 +477,6 @@ fn primary_adapter_name() -> Result<String> {
         .or_else(|| adapters.iter().find(|a| a.relevant()))
         .map(|a| a.name.clone())
         .ok_or_else(|| anyhow::anyhow!("no active network adapter"))
-}
-
-/// Friendly name of the wireless adapter (IF_TYPE_IEEE80211 = 71).
-#[cfg(windows)]
-fn wifi_adapter_name() -> Result<String> {
-    let adapters = unsafe { collect_adapters()? };
-    adapters
-        .iter()
-        .find(|a| a.if_type == 71)
-        .map(|a| a.name.clone())
-        .ok_or_else(|| anyhow::anyhow!("no Wi-Fi adapter found"))
 }
 
 /// Extract `<keyMaterial>...</keyMaterial>` from a WLAN profile XML.
@@ -515,7 +606,6 @@ unsafe fn collect_adapters() -> anyhow::Result<Vec<Adapter>> {
             gateways,
             dns,
             up: a.OperStatus.0 == 1, // IfOperStatusUp
-            if_type: a.IfType,
         });
 
         cur = a.Next;
@@ -809,7 +899,6 @@ mod tests {
             gateways: vec![],
             dns: vec![],
             up,
-            if_type: 71,
         };
         assert!(mk("Wi-Fi", true, true).relevant());
         assert!(!mk("Loopback Pseudo-Interface 1", true, true).relevant());
