@@ -9,6 +9,7 @@ mod admin;
 mod alias;
 mod color;
 mod del;
+mod dns;
 mod env;
 mod go;
 mod init;
@@ -91,6 +92,12 @@ enum Command {
     Net {
         #[command(subcommand)]
         action: Option<NetAction>,
+    },
+
+    /// Block domains and IPs (hosts file + firewall)
+    Dns {
+        #[command(subcommand)]
+        action: Option<DnsAction>,
     },
 
     /// Per-app volume mixer (interactive TUI)
@@ -373,6 +380,49 @@ enum NetAction {
     },
 }
 
+#[derive(Subcommand)]
+enum DnsAction {
+    /// Block domains (hosts file) or IPs/CIDRs (firewall)
+    Block {
+        /// Domain, IP address, or CIDR range
+        #[arg(value_name = "TARGET", required = true)]
+        targets: Vec<String>,
+
+        /// Don't also block the www. variant of apex domains
+        #[arg(short, long)]
+        exact: bool,
+
+        /// Dry run - show what would be blocked
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+    },
+
+    /// Unblock previously blocked domains or addresses
+    Unblock {
+        /// Domain, IP address, or CIDR range
+        #[arg(value_name = "TARGET", required = true)]
+        targets: Vec<String>,
+
+        /// Don't also unblock the www. variant of apex domains
+        #[arg(short, long)]
+        exact: bool,
+
+        /// Dry run - show what would be unblocked
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+    },
+
+    /// List everything uwu is blocking
+    List,
+
+    /// Remove every uwu-managed block
+    Clear {
+        /// Clear without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -407,6 +457,7 @@ fn main() -> Result<()> {
             ..
         } => handle_alias_command(name, command, ls, rm),
         Command::Net { action } => handle_net_command(action),
+        Command::Dns { action } => handle_dns_command(action),
         Command::Mixer { list } => mixer::run(list),
         Command::Sound { level } => sound::run(level.as_deref()),
         Command::Admin => admin::run(),
@@ -559,6 +610,25 @@ fn handle_net_command(action: Option<NetAction>) -> Result<()> {
             Some(name) if password => net::wifi_password(&name),
             Some(name) => net::wifi_connect(&name, pass.as_deref()),
         },
+    }
+}
+
+/// Handle DNS blocking commands
+fn handle_dns_command(action: Option<DnsAction>) -> Result<()> {
+    println!();
+    match action {
+        None | Some(DnsAction::List) => dns::list(),
+        Some(DnsAction::Block {
+            targets,
+            exact,
+            dry_run,
+        }) => dns::block(&targets, exact, dry_run),
+        Some(DnsAction::Unblock {
+            targets,
+            exact,
+            dry_run,
+        }) => dns::unblock(&targets, exact, dry_run),
+        Some(DnsAction::Clear { force }) => dns::clear(force),
     }
 }
 

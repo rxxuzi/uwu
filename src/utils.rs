@@ -46,30 +46,38 @@ pub fn print_info(message: &str) {
 
 // Platform-specific Utilities
 
-/// Check if the current process has administrator/elevated privileges
+/// Check if the current process has administrator/elevated privileges.
+///
+/// The process token has to be opened explicitly — querying elevation through a
+/// default (null) handle always fails, which would report every process as
+/// unelevated and send self-elevating commands into a re-launch loop.
 #[cfg(windows)]
 pub fn is_elevated() -> bool {
-    use windows::Win32::Foundation::*;
-    use windows::Win32::Security::*;
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     unsafe {
-        let mut elevation = TOKEN_ELEVATION::default();
-        let token_handle = HANDLE::default();
-        let mut bytes_needed = 0u32;
+        let mut token = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
 
-        if GetTokenInformation(
-            token_handle,
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut bytes_needed = 0u32;
+        let queried = GetTokenInformation(
+            token,
             TokenElevation,
             Some(&mut elevation as *mut _ as *mut _),
             std::mem::size_of::<TOKEN_ELEVATION>() as u32,
             &mut bytes_needed,
         )
-        .is_ok()
-        {
-            elevation.TokenIsElevated != 0
-        } else {
-            false
-        }
+        .is_ok();
+
+        let _ = CloseHandle(token);
+        queried && elevation.TokenIsElevated != 0
     }
 }
 

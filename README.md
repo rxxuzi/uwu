@@ -118,6 +118,21 @@ uwu wdex remove C:\dev
 uwu wdex list
 ```
 
+### `dns` — block domains and IPs
+```bash
+uwu dns block youtube.com     # sinkhole youtube.com *and* www.youtube.com
+uwu dns block 1.2.3.4 10.0.0.0/8   # addresses/ranges go to the firewall
+uwu dns block x.com -n        # dry run
+uwu dns block x.com -e        # exact — skip the www. variant
+uwu dns unblock youtube.com
+uwu dns                       # list everything uwu blocks
+uwu dns clear                 # remove every uwu-managed block
+```
+Domains are sinkholed (`0.0.0.0` **and** `::`, so IPv6 doesn't slip past) inside a
+marker-fenced section of `hosts`; raw IPs get in/out firewall rules named
+`uwu-block:<addr>`. Hand-written hosts entries and firewall rules are never
+touched. Self-elevates via UAC and flushes the resolver cache afterwards.
+
 ### `del` — safe recursive delete
 ```bash
 uwu del ./build          # confirms first
